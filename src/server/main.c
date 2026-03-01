@@ -25,17 +25,17 @@ static void copy_text(char *dst, size_t dst_len, const char *src) {
 }
 
 static void print_help(void) {
-    printf("umdns_server - mDNS responder\\n\\n");
-    printf("Usage:\\n");
-    printf("  umdns_server [options]\\n\\n");
-    printf("Options:\\n");
-    printf("  -i <iface>          Bind sockets to interface (best effort)\\n");
-    printf("  -c <config.ini>     INI file with hostname and services\\n");
-    printf("  --log-level <lvl>   debug|info|warn|error (default: info)\\n");
-    printf("  --log-file <path>   Log destination file (default: stderr)\\n");
-    printf("  -h, --help          Show this help\\n\\n");
-    printf("Example:\\n");
-    printf("  umdns_server -i eth0 -c ./config/umdns_server.ini --log-level debug\\n");
+    printf("umdns_server - mDNS responder\n\n");
+    printf("Usage:\n");
+    printf("  umdns_server [options]\n\n");
+    printf("Options:\n");
+    printf("  -i <iface>          Bind sockets to interface (best effort)\n");
+    printf("  -c <config.ini>     INI file with hostname and services\n");
+    printf("  --log-level <lvl>   debug|info|warn|error (default: info)\n");
+    printf("  --log-file <path>   Log destination file (default: stderr)\n");
+    printf("  -h, --help          Show this help\n\n");
+    printf("Example:\n");
+    printf("  umdns_server -i eth0 -c ./config/umdns_server.ini --log-level debug\n");
 }
 
 static void normalize_local_name(const char *input, char *output, size_t output_len) {

@@ -27,18 +27,18 @@ static void copy_text(char *dst, size_t dst_len, const char *src) {
 }
 
 static void print_help(void) {
-    printf("umdns_browser - mDNS network browser\\n\\n");
-    printf("Usage:\\n");
-    printf("  umdns_browser [options]\\n\\n");
-    printf("Options:\\n");
-    printf("  -i <iface>          Bind sockets to interface (best effort)\\n");
-    printf("  -t <seconds>        Total browse timeout (0 = infinite, default: 10)\\n");
-    printf("  -n <seconds>        Interval between network-wide queries (default: 3)\\n");
-    printf("  --log-level <lvl>   debug|info|warn|error (default: info)\\n");
-    printf("  --log-file <path>   Log destination file (default: stderr)\\n");
-    printf("  -h, --help          Show this help\\n\\n");
-    printf("Example:\\n");
-    printf("  umdns_browser -i eth0 -t 0 -n 5\\n");
+    printf("umdns_browser - mDNS network browser\n\n");
+    printf("Usage:\n");
+    printf("  umdns_browser [options]\n\n");
+    printf("Options:\n");
+    printf("  -i <iface>          Bind sockets to interface (best effort)\n");
+    printf("  -t <seconds>        Total browse timeout (0 = infinite, default: 10)\n");
+    printf("  -n <seconds>        Interval between network-wide queries (default: 3)\n");
+    printf("  --log-level <lvl>   debug|info|warn|error (default: info)\n");
+    printf("  --log-file <path>   Log destination file (default: stderr)\n");
+    printf("  -h, --help          Show this help\n\n");
+    printf("Example:\n");
+    printf("  umdns_browser -i eth0 -t 0 -n 5\n");
 }
 
 static int parse_int(const char *text, int min_value, int max_value, int *value) {

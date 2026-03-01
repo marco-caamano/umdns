@@ -27,21 +27,21 @@ static void copy_text(char *dst, size_t dst_len, const char *src) {
 }
 
 static void print_help(void) {
-    printf("umdns_client - mDNS query tool\\n\\n");
-    printf("Usage:\\n");
-    printf("  umdns_client [options]\\n\\n");
-    printf("Modes (mutually exclusive):\\n");
-    printf("  -H <hostname>       Resolve hostname (A/AAAA/TXT)\\n");
-    printf("  -s <service_type>   Resolve service (PTR/SRV/TXT)\\n\\n");
-    printf("Options:\\n");
-    printf("  -i <iface>          Bind sockets to interface (best effort)\\n");
-    printf("  -t <seconds>        Timeout waiting for replies (default: 3)\\n");
-    printf("  --log-level <lvl>   debug|info|warn|error (default: info)\\n");
-    printf("  --log-file <path>   Log destination file (default: stderr)\\n");
-    printf("  -h, --help          Show this help\\n\\n");
-    printf("Examples:\\n");
-    printf("  umdns_client -H myhost -i eth0 -t 3\\n");
-    printf("  umdns_client -s _http._tcp -i eth0 -t 5\\n");
+    printf("umdns_client - mDNS query tool\n\n");
+    printf("Usage:\n");
+    printf("  umdns_client [options]\n\n");
+    printf("Modes (mutually exclusive):\n");
+    printf("  -H <hostname>       Resolve hostname (A/AAAA/TXT)\n");
+    printf("  -s <service_type>   Resolve service (PTR/SRV/TXT)\n\n");
+    printf("Options:\n");
+    printf("  -i <iface>          Bind sockets to interface (best effort)\n");
+    printf("  -t <seconds>        Timeout waiting for replies (default: 3)\n");
+    printf("  --log-level <lvl>   debug|info|warn|error (default: info)\n");
+    printf("  --log-file <path>   Log destination file (default: stderr)\n");
+    printf("  -h, --help          Show this help\n\n");
+    printf("Examples:\n");
+    printf("  umdns_client -H myhost -i eth0 -t 3\n");
+    printf("  umdns_client -s _http._tcp -i eth0 -t 5\n");
 }
 
 static int parse_int(const char *text, int *value) {
