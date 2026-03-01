@@ -485,13 +485,14 @@ size_t umdns_mdns_parse_answers(const uint8_t *packet, size_t packet_len, umdns_
         }
 
         umdns_result_init(&results[result_count]);
-        umdns_copy_string(results[result_count].hostname, sizeof(results[result_count].hostname), rr_name);
         results[result_count].rrtype = rrtype;
 
         if (rrtype == UMDNS_RR_A && rdlength == 4) {
+            umdns_copy_string(results[result_count].hostname, sizeof(results[result_count].hostname), rr_name);
             inet_ntop(AF_INET, packet + rdata_offset, results[result_count].address, sizeof(results[result_count].address));
             result_count += 1;
         } else if (rrtype == UMDNS_RR_AAAA && rdlength == 16) {
+            umdns_copy_string(results[result_count].hostname, sizeof(results[result_count].hostname), rr_name);
             inet_ntop(AF_INET6, packet + rdata_offset, results[result_count].address, sizeof(results[result_count].address));
             result_count += 1;
         } else if (rrtype == UMDNS_RR_PTR) {

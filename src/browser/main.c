@@ -136,22 +136,8 @@ static size_t append_results_unique(umdns_result_t *dst, size_t dst_count, size_
     return dst_count;
 }
 
-static int run_cycle(int fd4, int fd6, umdns_result_t *results, size_t *result_count, int cycle_ms) {
-    uint8_t query[1500];
-    size_t query_len;
-    int remaining = cycle_ms;
-
-    query_len = umdns_mdns_build_query(UMDNS_RR_PTR, "_services._dns-sd._udp.local", query, sizeof(query));
-    if (query_len == 0) {
-        return -1;
-    }
-
-    if (fd4 >= 0 && umdns_socket_send_query_ipv4(fd4, query, query_len) != 0) {
-        umdns_log_warn("failed IPv4 browser query send: %s", strerror(errno));
-    }
-    if (fd6 >= 0 && umdns_socket_send_query_ipv6(fd6, query, query_len) != 0) {
-        umdns_log_warn("failed IPv6 browser query send: %s", strerror(errno));
-    }
+static int receive_responses(int fd4, int fd6, umdns_result_t *results, size_t *result_count, int timeout_ms) {
+    int remaining = timeout_ms;
 
     while (remaining > 0) {
         int slice = remaining > 250 ? 250 : remaining;
@@ -187,6 +173,140 @@ static int run_cycle(int fd4, int fd6, umdns_result_t *results, size_t *result_c
     }
 
     return 0;
+}
+
+static void extract_service_types(const umdns_result_t *results, size_t result_count, char service_types[][UMDNS_MAX_NAME], size_t *type_count, size_t max_types) {
+    size_t idx;
+    size_t out_idx = 0;
+
+    for (idx = 0; idx < result_count && out_idx < max_types; ++idx) {
+        if (results[idx].rrtype == UMDNS_RR_PTR && 
+            strcmp(results[idx].service_type, "_services._dns-sd._udp.local") == 0 &&
+            results[idx].instance[0] != '\0') {
+            size_t check;
+            int duplicate = 0;
+            size_t copy_len;
+
+            for (check = 0; check < out_idx; ++check) {
+                if (strcmp(service_types[check], results[idx].instance) == 0) {
+                    duplicate = 1;
+                    break;
+                }
+            }
+
+            if (!duplicate) {
+                copy_len = strlen(results[idx].instance);
+                if (copy_len >= UMDNS_MAX_NAME) {
+                    copy_len = UMDNS_MAX_NAME - 1;
+                }
+                memcpy(service_types[out_idx], results[idx].instance, copy_len);
+                service_types[out_idx][copy_len] = '\0';
+                out_idx += 1;
+            }
+        }
+    }
+
+    *type_count = out_idx;
+}
+
+static int run_cycle(int fd4, int fd6, umdns_result_t *results, size_t *result_count, int cycle_ms) {
+    uint8_t query[1500];
+    size_t query_len;
+    char service_types[32][UMDNS_MAX_NAME];
+    size_t service_type_count = 0;
+    size_t idx;
+
+    query_len = umdns_mdns_build_query(UMDNS_RR_PTR, "_services._dns-sd._udp.local", query, sizeof(query));
+    if (query_len == 0) {
+        return -1;
+    }
+
+    if (fd4 >= 0 && umdns_socket_send_query_ipv4(fd4, query, query_len) != 0) {
+        umdns_log_warn("failed IPv4 browser query send: %s", strerror(errno));
+    }
+    if (fd6 >= 0 && umdns_socket_send_query_ipv6(fd6, query, query_len) != 0) {
+        umdns_log_warn("failed IPv6 browser query send: %s", strerror(errno));
+    }
+
+    if (receive_responses(fd4, fd6, results, result_count, cycle_ms) != 0) {
+        return -1;
+    }
+
+    extract_service_types(results, *result_count, service_types, &service_type_count, 32);
+
+    for (idx = 0; idx < service_type_count; ++idx) {
+        umdns_log_debug("querying service type: %s", service_types[idx]);
+
+        query_len = umdns_mdns_build_query(UMDNS_RR_PTR, service_types[idx], query, sizeof(query));
+        if (query_len == 0) {
+            continue;
+        }
+
+        if (fd4 >= 0 && umdns_socket_send_query_ipv4(fd4, query, query_len) != 0) {
+            umdns_log_warn("failed IPv4 service query send: %s", strerror(errno));
+        }
+        if (fd6 >= 0 && umdns_socket_send_query_ipv6(fd6, query, query_len) != 0) {
+            umdns_log_warn("failed IPv6 service query send: %s", strerror(errno));
+        }
+
+        if (receive_responses(fd4, fd6, results, result_count, cycle_ms / 2) != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static size_t merge_service_results(umdns_result_t *results, size_t result_count) {
+    umdns_result_t merged[UMDNS_MAX_RESULTS];
+    size_t merged_count = 0;
+    size_t idx;
+
+    for (idx = 0; idx < result_count; ++idx) {
+        size_t merge_idx;
+        int found = 0;
+
+        if (results[idx].instance[0] == '\0') {
+            continue;
+        }
+
+        if (strcmp(results[idx].service_type, "_services._dns-sd._udp.local") == 0) {
+            continue;
+        }
+
+        for (merge_idx = 0; merge_idx < merged_count; ++merge_idx) {
+            if (strcmp(merged[merge_idx].instance, results[idx].instance) == 0) {
+                found = 1;
+
+                if (results[idx].hostname[0] != '\0' && merged[merge_idx].hostname[0] == '\0') {
+                    memcpy(merged[merge_idx].hostname, results[idx].hostname, sizeof(merged[merge_idx].hostname));
+                }
+                if (results[idx].service_type[0] != '\0' && merged[merge_idx].service_type[0] == '\0') {
+                    memcpy(merged[merge_idx].service_type, results[idx].service_type, sizeof(merged[merge_idx].service_type));
+                }
+                if (results[idx].address[0] != '\0' && merged[merge_idx].address[0] == '\0') {
+                    memcpy(merged[merge_idx].address, results[idx].address, sizeof(merged[merge_idx].address));
+                }
+                if (results[idx].port != 0 && merged[merge_idx].port == 0) {
+                    merged[merge_idx].port = results[idx].port;
+                }
+                if (results[idx].txt[0] != '\0' && merged[merge_idx].txt[0] == '\0') {
+                    memcpy(merged[merge_idx].txt, results[idx].txt, sizeof(merged[merge_idx].txt));
+                }
+                break;
+            }
+        }
+
+        if (!found && merged_count < UMDNS_MAX_RESULTS) {
+            merged[merged_count++] = results[idx];
+        }
+    }
+
+    if (merged_count > 0 && merged_count <= result_count) {
+        memcpy(results, merged, merged_count * sizeof(umdns_result_t));
+    }
+
+    return merged_count;
 }
 
 int main(int argc, char **argv) {
@@ -239,6 +359,7 @@ int main(int argc, char **argv) {
     if (result_count == 0) {
         printf("No mDNS results discovered\\n");
     } else {
+        result_count = merge_service_results(results, result_count);
         umdns_table_print_results(results, result_count);
     }
 
