@@ -57,6 +57,8 @@ Small C99 mDNS toolkit with three utilities:
 - `A`/`AAAA` records are always sourced from the bound interface addresses
 - Service discovery responses (`PTR`/`SRV`/`TXT`)
 - INI-style service registration config
+- Startup INFO logs include the resolved hostname/FQDN and each configured service loaded from config
+- Per-request INFO logs include source IP, request name/type, and whether/what response was sent
 - Graceful shutdown via `SIGINT` / `SIGTERM`
 
 [Back to top](#table-of-contents)
@@ -255,6 +257,7 @@ Notes:
 - Server hostname replies are always built from the local machine hostname.
 - `A`/`AAAA` replies are always built from the interface passed to `-i` (or first active non-loopback interface when `-i` is omitted).
 - Service `host` values are ignored and normalized to the same runtime hostname in `SRV` records.
+- At `info` log level, server startup logs show the runtime hostname plus every configured service, and query handling logs show source IP, query type, and response outcome.
 
 [Back to top](#table-of-contents)
 

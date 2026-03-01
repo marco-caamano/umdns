@@ -107,6 +107,82 @@ static int name_matches(const char *left, const char *right) {
     return strcasecmp(left, right) == 0;
 }
 
+static const char *rrtype_to_text(uint16_t rrtype) {
+    switch (rrtype) {
+        case UMDNS_RR_A:
+            return "A";
+        case UMDNS_RR_AAAA:
+            return "AAAA";
+        case UMDNS_RR_PTR:
+            return "PTR";
+        case UMDNS_RR_SRV:
+            return "SRV";
+        case UMDNS_RR_TXT:
+            return "TXT";
+        case 255:
+            return "ANY";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static void format_source_ip(const struct sockaddr *src_addr, char *ip, size_t ip_len) {
+    if (ip_len == 0) {
+        return;
+    }
+
+    ip[0] = '\0';
+
+    if (src_addr == NULL) {
+        snprintf(ip, ip_len, "unknown");
+        return;
+    }
+
+    if (src_addr->sa_family == AF_INET) {
+        const struct sockaddr_in *addr4 = (const struct sockaddr_in *)src_addr;
+        if (inet_ntop(AF_INET, &addr4->sin_addr, ip, ip_len) != NULL) {
+            return;
+        }
+    }
+
+    if (src_addr->sa_family == AF_INET6) {
+        const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *)src_addr;
+        if (inet_ntop(AF_INET6, &addr6->sin6_addr, ip, ip_len) != NULL) {
+            return;
+        }
+    }
+
+    snprintf(ip, ip_len, "unknown");
+}
+
+static void log_startup_services(const umdns_server_config_t *config) {
+    size_t idx;
+    char host_fqdn[UMDNS_MAX_NAME];
+
+    normalize_local_name(config->hostname, host_fqdn, sizeof(host_fqdn));
+    umdns_log_info("resolving hostname '%s' (runtime host='%s', IPv4=%s, IPv6=%s)",
+                   host_fqdn,
+                   config->hostname,
+                   config->ipv4,
+                   config->ipv6);
+
+    if (config->service_count == 0) {
+        umdns_log_info("no services configured");
+        return;
+    }
+
+    for (idx = 0; idx < config->service_count; ++idx) {
+        const umdns_service_t *svc = &config->services[idx];
+        umdns_log_info("configured service[%zu]: instance='%s' type='%s' host='%s' port=%u txt='%s'",
+                       idx,
+                       svc->instance,
+                       svc->type,
+                       svc->host,
+                       (unsigned int)svc->port,
+                       svc->txt);
+    }
+}
+
 static void discover_interface_addresses(const char *interface_name,
                                          char *ipv4,
                                          size_t ipv4_len,
@@ -207,18 +283,28 @@ static int handle_question(int fd,
     uint8_t response[1500];
     size_t response_len = 0;
     char host_fqdn[UMDNS_MAX_NAME];
+    char src_ip[INET6_ADDRSTRLEN];
+    const char *response_kind = "none";
     size_t idx;
 
     normalize_local_name(config->hostname, host_fqdn, sizeof(host_fqdn));
+    format_source_ip(src_addr, src_ip, sizeof(src_ip));
+    umdns_log_info("request from %s: name='%s' type=%s(%u)",
+                   src_ip,
+                   question->name,
+                   rrtype_to_text(question->qtype),
+                   question->qtype);
 
     if (question->qtype == UMDNS_RR_A || question->qtype == UMDNS_RR_AAAA || question->qtype == UMDNS_RR_TXT || question->qtype == 255) {
         if (name_matches(question->name, host_fqdn)) {
             response_len = umdns_mdns_build_response_hostname(config->hostname, config->ipv4, config->ipv6, config->host_txt, response, sizeof(response));
+            response_kind = "hostname";
         }
     }
 
     if (question->qtype == UMDNS_RR_PTR && name_matches(question->name, "_services._dns-sd._udp.local")) {
         response_len = umdns_mdns_build_response_service_enum(config->services, config->service_count, response, sizeof(response));
+        response_kind = "service-enum";
     }
 
     for (idx = 0; idx < config->service_count; ++idx) {
@@ -238,10 +324,12 @@ static int handle_question(int fd,
 
         if (question->qtype == UMDNS_RR_PTR && name_matches(question->name, type_fqdn)) {
             response_len = umdns_mdns_build_response_service(&config->services[idx], response, sizeof(response));
+            response_kind = "service";
         }
 
         if ((question->qtype == UMDNS_RR_SRV || question->qtype == UMDNS_RR_TXT || question->qtype == 255) && name_matches(question->name, instance_fqdn)) {
             response_len = umdns_mdns_build_response_service(&config->services[idx], response, sizeof(response));
+            response_kind = "service";
         }
     }
 
@@ -250,6 +338,13 @@ static int handle_question(int fd,
             umdns_log_warn("failed to send response: %s", strerror(errno));
             return -1;
         }
+        umdns_log_info("response sent to %s: kind=%s bytes=%zu", src_ip, response_kind, response_len);
+    } else {
+        umdns_log_info("no response sent to %s for name='%s' type=%s(%u)",
+                       src_ip,
+                       question->name,
+                       rrtype_to_text(question->qtype),
+                       question->qtype);
     }
 
     return 0;
@@ -298,11 +393,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    umdns_log_info("server ready for hostname '%s' with IPv4=%s IPv6=%s and %zu services",
-                   config.hostname,
-                   config.ipv4,
-                   config.ipv6,
-                   config.service_count);
+    umdns_log_info("server ready");
+    log_startup_services(&config);
 
     while (!umdns_signal_should_terminate()) {
         uint8_t buffer[1500];
@@ -315,7 +407,6 @@ int main(int argc, char **argv) {
             src_len = sizeof(src);
             received = umdns_socket_recv_with_timeout(fd4, buffer, sizeof(buffer), 250, &src, &src_len);
             if (received > 0 && umdns_mdns_parse_question(buffer, (size_t)received, &question) == 0) {
-                umdns_log_debug("IPv4 question: %s type=%u", question.name, question.qtype);
                 (void)handle_question(fd4, (const struct sockaddr *)&src, src_len, &config, &question);
             }
         }
@@ -324,7 +415,6 @@ int main(int argc, char **argv) {
             src_len = sizeof(src);
             received = umdns_socket_recv_with_timeout(fd6, buffer, sizeof(buffer), 250, &src, &src_len);
             if (received > 0 && umdns_mdns_parse_question(buffer, (size_t)received, &question) == 0) {
-                umdns_log_debug("IPv6 question: %s type=%u", question.name, question.qtype);
                 (void)handle_question(fd6, (const struct sockaddr *)&src, src_len, &config, &question);
             }
         }
