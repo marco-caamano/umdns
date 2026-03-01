@@ -62,7 +62,6 @@ static int umdns_find_or_create_service(umdns_server_config_t *config, const cha
 int umdns_server_config_load(const char *path, umdns_server_config_t *config) {
     FILE *fp;
     char line[1024];
-    char section[UMDNS_MAX_NAME] = "server";
     int service_index = -1;
 
     fp = fopen(path, "r");
@@ -84,9 +83,8 @@ int umdns_server_config_load(const char *path, umdns_server_config_t *config) {
                 continue;
             }
             *close = '\0';
-            umdns_copy_value(section, sizeof(section), trimmed + 1);
-            if (strncmp(section, "service ", 8) == 0) {
-                service_index = umdns_find_or_create_service(config, section + 8);
+            if (strncmp(trimmed + 1, "service ", 8) == 0) {
+                service_index = umdns_find_or_create_service(config, trimmed + 1 + 8);
             } else {
                 service_index = -1;
             }
@@ -104,17 +102,7 @@ int umdns_server_config_load(const char *path, umdns_server_config_t *config) {
         trimmed = umdns_trim(trimmed);
         eq = umdns_trim(eq);
 
-        if (strcmp(section, "server") == 0) {
-            if (strcmp(trimmed, "hostname") == 0) {
-                umdns_copy_value(config->hostname, sizeof(config->hostname), eq);
-            } else if (strcmp(trimmed, "ipv4") == 0) {
-                umdns_copy_value(config->ipv4, sizeof(config->ipv4), eq);
-            } else if (strcmp(trimmed, "ipv6") == 0) {
-                umdns_copy_value(config->ipv6, sizeof(config->ipv6), eq);
-            } else if (strcmp(trimmed, "txt") == 0) {
-                umdns_copy_value(config->host_txt, sizeof(config->host_txt), eq);
-            }
-        } else if (service_index >= 0) {
+        if (service_index >= 0) {
             umdns_service_t *svc = &config->services[(size_t)service_index];
             if (strcmp(trimmed, "type") == 0) {
                 umdns_copy_value(svc->type, sizeof(svc->type), eq);

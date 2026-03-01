@@ -1,4 +1,7 @@
 #include <errno.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +33,7 @@ static void print_help(void) {
     printf("  umdns_server [options]\n\n");
     printf("Options:\n");
     printf("  -i <iface>          Bind sockets to interface (best effort)\n");
-    printf("  -c <config.ini>     INI file with hostname and services\n");
+    printf("  -c <config.ini>     INI file with services\n");
     printf("  --log-level <lvl>   debug|info|warn|error (default: info)\n");
     printf("  --log-file <path>   Log destination file (default: stderr)\n");
     printf("  -h, --help          Show this help\n\n");
@@ -102,6 +105,98 @@ static int parse_args(int argc, char **argv, server_options_t *options) {
 
 static int name_matches(const char *left, const char *right) {
     return strcasecmp(left, right) == 0;
+}
+
+static void discover_interface_addresses(const char *interface_name,
+                                         char *ipv4,
+                                         size_t ipv4_len,
+                                         char *ipv6,
+                                         size_t ipv6_len) {
+    struct ifaddrs *ifaddr = NULL;
+    struct ifaddrs *ifa;
+    int has_ipv4 = 0;
+    int has_ipv6 = 0;
+    int require_interface = interface_name != NULL && interface_name[0] != '\0';
+
+    if (ipv4_len > 0) {
+        ipv4[0] = '\0';
+    }
+    if (ipv6_len > 0) {
+        ipv6[0] = '\0';
+    }
+
+    if (getifaddrs(&ifaddr) != 0) {
+        copy_text(ipv4, ipv4_len, "127.0.0.1");
+        copy_text(ipv6, ipv6_len, "::1");
+        return;
+    }
+
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        char value[INET6_ADDRSTRLEN];
+
+        if (ifa->ifa_addr == NULL) {
+            continue;
+        }
+
+        if ((ifa->ifa_flags & IFF_UP) == 0) {
+            continue;
+        }
+
+        if (require_interface && strcmp(ifa->ifa_name, interface_name) != 0) {
+            continue;
+        }
+
+        if (!require_interface && (ifa->ifa_flags & IFF_LOOPBACK) != 0) {
+            continue;
+        }
+
+        if (!has_ipv4 && ifa->ifa_addr->sa_family == AF_INET) {
+            const struct sockaddr_in *addr4 = (const struct sockaddr_in *)ifa->ifa_addr;
+            if (inet_ntop(AF_INET, &addr4->sin_addr, value, sizeof(value)) != NULL) {
+                copy_text(ipv4, ipv4_len, value);
+                has_ipv4 = 1;
+            }
+        }
+
+        if (!has_ipv6 && ifa->ifa_addr->sa_family == AF_INET6) {
+            const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *)ifa->ifa_addr;
+            if (IN6_IS_ADDR_LINKLOCAL(&addr6->sin6_addr)) {
+                continue;
+            }
+            if (inet_ntop(AF_INET6, &addr6->sin6_addr, value, sizeof(value)) != NULL) {
+                copy_text(ipv6, ipv6_len, value);
+                has_ipv6 = 1;
+            }
+        }
+
+        if (has_ipv4 && has_ipv6) {
+            break;
+        }
+    }
+
+    freeifaddrs(ifaddr);
+
+    if (!has_ipv4) {
+        copy_text(ipv4, ipv4_len, "127.0.0.1");
+    }
+    if (!has_ipv6) {
+        copy_text(ipv6, ipv6_len, "::1");
+    }
+}
+
+static void apply_runtime_identity(umdns_server_config_t *config, const char *interface_name) {
+    size_t idx;
+
+    if (gethostname(config->hostname, sizeof(config->hostname) - 1) != 0) {
+        copy_text(config->hostname, sizeof(config->hostname), "umdns");
+    }
+    config->hostname[sizeof(config->hostname) - 1] = '\0';
+
+    discover_interface_addresses(interface_name, config->ipv4, sizeof(config->ipv4), config->ipv6, sizeof(config->ipv6));
+
+    for (idx = 0; idx < config->service_count; ++idx) {
+        copy_text(config->services[idx].host, sizeof(config->services[idx].host), config->hostname);
+    }
 }
 
 static int handle_question(int fd,
@@ -178,9 +273,6 @@ int main(int argc, char **argv) {
     }
 
     umdns_server_config_init(&config);
-    if (gethostname(config.hostname, sizeof(config.hostname) - 1) != 0) {
-        copy_text(config.hostname, sizeof(config.hostname), "umdns");
-    }
 
     if (options.config_path[0] != '\0') {
         if (umdns_server_config_load(options.config_path, &config) != 0) {
@@ -189,6 +281,8 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+
+    apply_runtime_identity(&config, options.interface_name);
 
     if (umdns_signal_install_handlers() != 0) {
         umdns_log_error("failed to install signal handlers");
@@ -204,7 +298,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    umdns_log_info("server ready for hostname '%s' with %zu services", config.hostname, config.service_count);
+    umdns_log_info("server ready for hostname '%s' with IPv4=%s IPv6=%s and %zu services",
+                   config.hostname,
+                   config.ipv4,
+                   config.ipv6,
+                   config.service_count);
 
     while (!umdns_signal_should_terminate()) {
         uint8_t buffer[1500];

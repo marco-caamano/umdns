@@ -53,7 +53,8 @@ Small C99 mDNS toolkit with three utilities:
 
 ### Server Features
 - Binds to interface (best effort) and listens for mDNS queries
-- Hostname discovery responses (`A`/`AAAA`/`TXT`)
+- Hostname discovery responses (`A`/`AAAA`/`TXT`) always use the server OS hostname
+- `A`/`AAAA` records are always sourced from the bound interface addresses
 - Service discovery responses (`PTR`/`SRV`/`TXT`)
 - INI-style service registration config
 - Graceful shutdown via `SIGINT` / `SIGTERM`
@@ -144,7 +145,7 @@ Continuous mode (until Ctrl+C):
 ```text
 umdns_server [options]
 	-i <iface>          Bind sockets to interface
-	-c <config.ini>     INI file with hostname and services
+	-c <config.ini>     INI file with services
 	--log-level <lvl>   debug|info|warn|error
 	--log-file <path>   Write logs to file
 	-h, --help
@@ -236,20 +237,24 @@ sequenceDiagram
 ## Configuration
 Server INI example (`config/umdns_server.ini`):
 ```ini
-[server]
-hostname = umdns-node
-ipv4 = 127.0.0.1
-ipv6 = ::1
-txt = role=demo
-
 [service web]
 type = _http._tcp
-host = umdns-node
 port = 8080
 txt = path=/
+
+[service ssh]
+type = _ssh._tcp
+port = 22
+txt = proto=tcp
 ```
 
 Service sections use `service <instance_name>` format.
+
+Notes:
+- The config parser only reads `service <instance_name>` sections.
+- Server hostname replies are always built from the local machine hostname.
+- `A`/`AAAA` replies are always built from the interface passed to `-i` (or first active non-loopback interface when `-i` is omitted).
+- Service `host` values are ignored and normalized to the same runtime hostname in `SRV` records.
 
 [Back to top](#table-of-contents)
 
