@@ -236,7 +236,12 @@ static void discover_interface_addresses(const char *interface_name,
 
         if (!has_ipv6 && ifa->ifa_addr->sa_family == AF_INET6) {
             const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *)ifa->ifa_addr;
-            if (IN6_IS_ADDR_LINKLOCAL(&addr6->sin6_addr)) {
+            /* Skip link-local only when NOT filtering by interface */
+            if (!require_interface && IN6_IS_ADDR_LINKLOCAL(&addr6->sin6_addr)) {
+                continue;
+            }
+            /* Skip loopback addresses */
+            if (IN6_IS_ADDR_LOOPBACK(&addr6->sin6_addr)) {
                 continue;
             }
             if (inet_ntop(AF_INET6, &addr6->sin6_addr, value, sizeof(value)) != NULL) {

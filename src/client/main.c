@@ -225,6 +225,7 @@ int main(int argc, char **argv) {
         umdns_log_info("no results received");
         printf("No mDNS results for target '%s'\\n", options.target);
     } else {
+        result_count = umdns_table_deduplicate_results(results, result_count);
         umdns_table_print_results(results, result_count);
     }
 
